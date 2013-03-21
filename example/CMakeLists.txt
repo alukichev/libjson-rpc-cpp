@@ -6,5 +6,8 @@ target_link_libraries(jsonrpcserversample jsonrpc)
 add_executable(jsonrpcclientsample simpleclient.cpp)
 target_link_libraries(jsonrpcclientsample jsonrpc)
 
+add_executable(jsonrpctcpclient tcpclient.cpp)
+target_link_libraries(jsonrpctcpclient jsonrpc)
+
 add_executable(jsonrpcstubclient simplestubclient.cpp)
 target_link_libraries(jsonrpcstubclient jsonrpc)

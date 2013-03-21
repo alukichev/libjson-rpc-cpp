@@ -18,6 +18,7 @@
 
 #include "connectors/httpserver.h"
 #include "connectors/httpclient.h"
+#include "connectors/tcpclient.h"
 
 
 
