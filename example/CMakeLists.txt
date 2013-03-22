@@ -7,6 +7,11 @@ if(USE_HTTP)
   add_executable(jsonrpcclientsample simpleclient.cpp)
   target_link_libraries(jsonrpcclientsample jsonrpc)
 
-  #add_executable(jsonrpcstubclient simplestubclient.cpp)
-  #target_link_libraries(jsonrpcstubclient jsonrpc)
+  add_executable(jsonrpcstubclient simplestubclient.cpp)
+  target_link_libraries(jsonrpcstubclient jsonrpc)
+endif()
+
+if(USE_TCP)
+  add_executable(jsonrpctcpclient tcpclient.cpp)
+  target_link_libraries(jsonrpctcpclient jsonrpc)
 endif()

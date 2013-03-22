@@ -1,12 +1,22 @@
 file(GLOB jsonrpc_source *.cpp)
 file(GLOB jsonrpc_header *.h)
 
+set(jsonrpc_header ${jsonrpc_header} ${PROJECT_BINARY_DIR}/config.h)
+
 if(USE_HTTP)
   file(GLOB http_connector_headers connectors/http*.h)
   file(GLOB http_connector_sources connectors/http*.cpp)
-  
   set(jsonrpc_source ${jsonrpc_source} ${http_connector_sources})
   set(connector_header ${connector_header} ${http_connector_headers})
+endif()
+
+if(USE_TCP)
+  file(GLOB tcp_connector_headers connectors/tcp*.h)
+  file(GLOB tcp_connector_sources connectors/tcp*.cpp)
+  set(jsonrpc_source ${jsonrpc_source} ${tcp_connector_sources})
+  set(connector_header ${connector_header} ${tcp_connector_headers})
+
+  set(DEP_LIBS ${DEP_LIBS} ${Boost_LIBRARIES} pthread)
 endif()
 
 add_library(jsonrpc SHARED ${jsonrpc_source})

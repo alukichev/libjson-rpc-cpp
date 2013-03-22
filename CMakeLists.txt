@@ -4,9 +4,14 @@ project(libjson-rpc-cpp)
 include_directories(lib)
 set(DEP_LIBS json)
 
+# Feature configuration
 option(USE_HTTP
        "Support JSON-RPC over HTTP (requires libcurl)" 
        ON)
+
+option(USE_TCP
+       "Support JSON-RPC over plain TCP (requires boost at compile time)"
+       OFF)
 
 if(USE_HTTP)
   find_package(CURL REQUIRED)
@@ -14,6 +19,18 @@ if(USE_HTTP)
   set(DEP_LIBS ${DEP_LIBS} ${CURL_LIBRARIES})
 endif()
 
+if(USE_TCP)
+  set(Boost_USE_STATIC_LIBS ON)
+  set(Boost_USE_STATIC_RUNTIME ON)
+  find_package( Boost 1.44.0 COMPONENTS system )
+endif()
+
+configure_file (
+  "${PROJECT_SOURCE_DIR}/config.h.in"
+  "${PROJECT_BINARY_DIR}/config.h"
+  )
+include_directories(${PROJECT_BINARY_DIR})
+add_definitions(-DLIBJSON_RPC_CPP_BUILD=1)
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/out)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/out)

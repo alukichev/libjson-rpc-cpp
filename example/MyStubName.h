@@ -13,7 +13,7 @@
 class MyStubName
 {
     public:
-        MyStubName(jsonrpc::ClientConnector* conn)
+        MyStubName(jsonrpc::AbstractClientConnector* conn)
         {
             this->client = new jsonrpc::Client(conn,false);
         }

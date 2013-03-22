@@ -1,0 +1,18 @@
+#ifndef LIBJSON_RPC_CPP_CONFIG_H
+#define LIBJSON_RPC_CPP_CONFIG_H
+
+#ifdef ON
+#undef ON
+#endif
+
+#ifdef OFF
+#undef OFF
+#endif
+
+#define ON      1
+#define OFF     0
+
+#define LIBJSON_RPC_CPP_CONFIG_USE_HTTP    @USE_HTTP@
+#define LIBJSON_RPC_CPP_CONFIG_USE_TCP     @USE_TCP@
+
+#endif /* LIBJSON_RPC_CPP_CONFIG_H */
