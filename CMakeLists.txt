@@ -7,11 +7,11 @@ set(DEP_LIBS json)
 # Feature configuration
 option(USE_HTTP
        "Support JSON-RPC over HTTP (requires libcurl)" 
-       ON)
+       OFF)
 
 option(USE_TCP
        "Support JSON-RPC over plain TCP (requires boost at compile time)"
-       OFF)
+       ON)
 
 if(USE_HTTP)
   find_package(CURL REQUIRED)
