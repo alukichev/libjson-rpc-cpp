@@ -9,6 +9,7 @@
 #include "tcpclient.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -18,8 +19,11 @@
 #include <errno.h>
 #include <string.h>
 
-using namespace std;
 using boost::asio::ip::tcp;
+using boost::asio::io_service;
+using boost::asio::ip::address_v4;
+using boost::system::error_code;
+using boost::system::system_error;
 
 #define DEBUG
 
@@ -32,12 +36,61 @@ using boost::asio::ip::tcp;
 namespace jsonrpc
 {
     struct TcpClientPrivate {
-        const std::string url;
-        boost::asio::io_service ioService;
-        boost::asio::ip::tcp::socket socket;
+        std::string host;
+        std::string port;
+        io_service ioService;
+        tcp::socket socket;
 
-        inline TcpClientPrivate(const std::string& url_) : url(url_), ioService(), socket(ioService) {}
+        inline TcpClientPrivate(const std::string& url) : ioService(), socket(ioService) { _parseUrl(url); }
+
+    private:
+        static const std::string _DefaultPort;
+
+        inline void _parseUrl(const std::string& url);
     };
+
+    const std::string TcpClientPrivate::_DefaultPort = "8889";
+
+    inline void TcpClientPrivate::_parseUrl(const std::string &url)
+    {
+
+        // Get the host name
+        const std::string prot_end = "://";
+        size_t host_start = url.find(prot_end);
+        if (host_start == std::string::npos)
+            host_start = 0;
+        else
+            host_start += prot_end.length();
+
+        const std::string host_end_s = ":/";
+        size_t host_end = url.find_first_of(host_end_s, host_start);
+        if (host_end == std::string::npos)
+            host_end = url.length();
+
+        size_t host_len = host_end - host_start;
+        host = url.substr(host_start, host_len);
+
+        // Get the port name
+        if (url.length() <= host_end + 1 || url[host_end] != ':') {
+            DOUT("url %s: assigning default port %s", url.c_str(), _DefaultPort.c_str());
+            port = _DefaultPort;
+        }
+        else {
+            char *e;
+            const std::string port_s = url.substr(host_end + 1, url.length() - (host_end + 1));
+
+            if (!::strtoul(port_s.c_str(), &e, 10) || e == port_s.c_str()) {
+                DOUT("url %s has incorrect port number, assigning default %s", url.c_str(), _DefaultPort.c_str());
+                port = _DefaultPort;
+            }
+            else {
+                const size_t len = e - port_s.c_str();
+                port = port_s.substr(0, len);
+            }
+        }
+
+        DOUT("url %s: host %s, port %s", url.c_str(), host.c_str(), port.c_str());
+    }
 
     TcpClient::TcpClient(const std::string& url) throw (Exception)
     {
@@ -55,7 +108,7 @@ namespace jsonrpc
     std::string TcpClient::SendMessage(const std::string& message) throw (Exception)
     {
         if (!_connect())
-            throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "url:" + _d->url);
+            throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "url: " + _d->host + ":" + _d->port);
 
         std::string response;
 
@@ -69,13 +122,13 @@ namespace jsonrpc
 
             len = _d->socket.write_some(boost::asio::buffer(message.c_str(), message.size()), error);
             if (error && error != boost::asio::error::eof)
-                throw boost::system::system_error(error);
+                throw system_error(error);
             if (len < message.size())
                 throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "could not send request");
 
             len = _d->socket.read_some(boost::asio::buffer(buf), error);
             if (error && error != boost::asio::error::eof)
-                throw boost::system::system_error(error);
+                throw system_error(error);
 
             response = buf.data();
             DOUT("got response %s", response.c_str());
@@ -96,20 +149,29 @@ namespace jsonrpc
 
         try
         {
-            tcp::endpoint server(boost::asio::ip::address_v4::from_string("127.0.0.1"), 8889);
-            boost::system::error_code error;
+            tcp::resolver resolver(_d->ioService);
+            tcp::resolver::query query(_d->host.c_str(), _d->port.c_str());
+            tcp::resolver::iterator endpoints = resolver.resolve(query);
 
-            _d->socket.connect(server, error);
+            boost::system::error_code error = boost::asio::error::host_not_found;
+            for (tcp::resolver::iterator end; error && endpoints != end; endpoints++)
+            {
+                const tcp::endpoint& endpoint = *endpoints;
+
+                DOUT("Trying %s", endpoint.address().to_string().c_str());
+                _d->socket.close();
+                _d->socket.connect(endpoint, error);
+            }
             if (error)
-                throw boost::system::system_error(error);
+                throw system_error(error);
         }
         catch (const std::exception& e)
         {
-            DOUT("could not connect to 127.0.0.1:8889: %s", e.what());
+            DOUT("could not connect to %s:%s: %s", _d->host.c_str(), _d->port.c_str(), e.what());
             return false;
         }
 
-        DOUT("connected to 127.0.0.1:8889");
+        DOUT("connected to %s:%s", _d->host.c_str(), _d->port.c_str());
 
         return true;
     }

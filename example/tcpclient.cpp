@@ -13,7 +13,7 @@ using namespace std;
 
 int main()
 {
-    Client c(new TcpClient("localhost:8889"), true);
+    Client c(new TcpClient("tcp://localhost:8889"), true);
 
     Json::Value params;
 
