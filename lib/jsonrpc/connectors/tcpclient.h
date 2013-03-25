@@ -18,10 +18,13 @@ namespace jsonrpc
     class TcpClient : public AbstractClientConnector
     {
         public:
+            TcpClient();
             TcpClient(const std::string& url) throw (Exception);
             virtual ~TcpClient();
 
             virtual std::string SendMessage(const std::string& message) throw (Exception);
+
+            bool SetUrl(const std::string& url = "localhost");
 
         private:
             TcpClientPrivate *_d;

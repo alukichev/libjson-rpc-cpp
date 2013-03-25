@@ -41,17 +41,18 @@ namespace jsonrpc
         io_service ioService;
         tcp::socket socket;
 
-        inline TcpClientPrivate(const std::string& url) : ioService(), socket(ioService) { _parseUrl(url); }
+        inline TcpClientPrivate(const std::string& url) : ioService(), socket(ioService) { setUrl(url); }
+        inline TcpClientPrivate() : ioService(), socket(ioService) {}
+
+        inline void setUrl(const std::string& url);
 
     private:
         static const std::string _DefaultPort;
-
-        inline void _parseUrl(const std::string& url);
     };
 
     const std::string TcpClientPrivate::_DefaultPort = "8889";
 
-    inline void TcpClientPrivate::_parseUrl(const std::string &url)
+    inline void TcpClientPrivate::setUrl(const std::string &url)
     {
 
         // Get the host name
@@ -90,6 +91,12 @@ namespace jsonrpc
         }
 
         DOUT("url %s: host %s, port %s", url.c_str(), host.c_str(), port.c_str());
+    }
+
+    TcpClient::TcpClient()
+    {
+        DOUT("Creating a connector without url");
+        _d = new TcpClientPrivate();
     }
 
     TcpClient::TcpClient(const std::string& url) throw (Exception)
@@ -142,8 +149,25 @@ namespace jsonrpc
         return response;
     }
 
+    bool TcpClient::SetUrl(const std::string& url)
+    {
+        if (!_d) {
+            DOUT("not initialized");
+            return false;
+        }
+
+        _d->setUrl(url);
+
+        return !_d->host.empty();
+    }
+
     bool TcpClient::_connect()
     {
+        if (!_d) {
+            DOUT("not initialized");
+            return false;
+        }
+
         if (_d->socket.is_open())
             return true;
 
