@@ -137,7 +137,7 @@ namespace jsonrpc
             if (error && error != boost::asio::error::eof)
                 throw system_error(error);
 
-            response = buf.data();
+            response.assign(buf.data(), len);
             DOUT("got response %s", response.c_str());
         }
         catch (const std::exception& e)
