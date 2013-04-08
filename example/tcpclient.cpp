@@ -5,8 +5,10 @@
  * @brief This is a simple tcp client example.
  */
 
-#include <jsonrpc/rpc.h>
+#include <cstdlib>
 #include <iostream>
+
+#include <jsonrpc/rpc.h>
 
 using namespace jsonrpc;
 using namespace std;
@@ -19,14 +21,18 @@ int main()
 
     params[0] = 1;
 
-    try
-    {
-        cout << c.CallMethod("SCC.ping", params) << endl;
-    }
-    catch (const Exception& e)
-    {
-        cerr << e.what() << endl;
+    for (int i = 0; i < 100; ++i) {
+        try
+        {
+            cout << c.CallMethod("SCC.ping", params) << endl;
+        }
+        catch (const Exception& e)
+        {
+            cerr << e.what() << endl;
+        }
+
+        ::sleep(1);
     }
 
-
+    return 0;
 }

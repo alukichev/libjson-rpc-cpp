@@ -143,6 +143,7 @@ namespace jsonrpc
         catch (const std::exception& e)
         {
             DOUT("error %s", e.what());
+            _disconnect();
             throw Exception(Errors::ERROR_CLIENT_CONNECTOR, e.what());
         }
 
@@ -161,7 +162,7 @@ namespace jsonrpc
         return !_d->host.empty();
     }
 
-    bool TcpClient::_connect()
+    bool TcpClient::_connect(void)
     {
         if (!_d) {
             DOUT("not initialized");
@@ -198,5 +199,20 @@ namespace jsonrpc
         DOUT("connected to %s:%s", _d->host.c_str(), _d->port.c_str());
 
         return true;
+    }
+
+    void TcpClient::_disconnect(void)
+    {
+        if (!_d || !_d->socket.is_open())
+            return;
+
+        try {
+            boost::system::error_code error;
+            _d->socket.shutdown(tcp::socket::shutdown_both, error);
+            _d->socket.close();
+        }
+        catch (const std::exception& e) {
+            DOUT("could not close socket: %s", e.what());
+        }
     }
 }

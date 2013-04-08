@@ -31,6 +31,7 @@ namespace jsonrpc
 
         private:
             bool _connect(void);
+            void _disconnect(void);
     };
 
 } /* namespace jsonrpc */
