@@ -18,6 +18,8 @@ namespace jsonrpc
     class TcpClient : public AbstractClientConnector
     {
         public:
+            /* If one uses the default constructor, SetUrl() must be called before sending a message. */
+            TcpClient(void);
             TcpClient(unsigned int response_buf_size = 4096) throw (Exception);
             TcpClient(const std::string& url, unsigned int response_buf_size = 4096) throw (Exception);
             virtual ~TcpClient();
@@ -30,6 +32,7 @@ namespace jsonrpc
             TcpClientPrivate *_d;
 
         private:
+            void _init(const std::string& url, unsigned int response_buf_size) throw (Exception);
             bool _connect(void);
             void _disconnect(void);
     };

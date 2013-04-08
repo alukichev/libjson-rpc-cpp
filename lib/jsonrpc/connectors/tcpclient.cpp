@@ -43,8 +43,7 @@ namespace jsonrpc
         char *buffer;
         size_t buffer_size;
 
-        inline TcpClientPrivate(size_t bufsize, const std::string& url) : ioService(), socket(ioService) { setUrl(url); createBuf(bufsize); }
-        inline TcpClientPrivate(size_t bufsize) : ioService(), socket(ioService) { createBuf(bufsize); }
+        inline TcpClientPrivate(size_t bufsize, const std::string& url) : ioService(), socket(ioService) { if (!url.empty()) setUrl(url); createBuf(bufsize); }
 
         inline ~TcpClientPrivate() { if (buffer) delete buffer; }
 
@@ -56,8 +55,31 @@ namespace jsonrpc
         static const size_t _DefaultBufsize;
     };
 
+    /** A primitive tester to know when we need to wait for more data from a socket.
+    */
+    class JsonCompletionTester {
+        public:
+            enum Mode {
+                Undefined,
+                Object,
+                Array
+            };
+
+            JsonCompletionTester() : _root(Undefined), _num(0) {}
+
+            bool isComplete(const char *new_data, size_t size);
+            Mode root(void) const { return _root; }
+
+        private:
+            static const int _SaneNumLimit;
+
+            Mode _root;
+            int _num;
+    };
+
     const std::string TcpClientPrivate::_DefaultPort = "8889";
     const size_t TcpClientPrivate::_DefaultBufsize = 4096;
+    const int JsonCompletionTester::_SaneNumLimit = 4096;
 
     inline void TcpClientPrivate::createBuf(size_t size)
     {
@@ -71,11 +93,12 @@ namespace jsonrpc
         buffer_size = 0;
 
         try { // If new throws an exception
+            DOUT("trying to get %i bytes of memory for input buffer", size);
             buffer = new char[size];
             buffer_size = size;
         }
         catch (const std::exception& e) {
-            DOUT("could not allocate a buffer of %i bytes: %s", e.what());
+            DOUT("could not get %i bytes of memory: %s", e.what());
         }
     }
 
@@ -120,31 +143,66 @@ namespace jsonrpc
         DOUT("url %s: host %s, port %s", url.c_str(), host.c_str(), port.c_str());
     }
 
+    /**
+      @retval true  buffer either contains a complete JSON document (root() != Undefined) or
+                    a document tree with too many levels (root() == Undefined)
+      @retval false more data is needed to decide if a document is complete
+    */
+    bool JsonCompletionTester::isComplete(const char *new_data, size_t size)
+    {
+        bool is_complete = false;
+        char expected_open = '{', expected_close = '}';
+
+        // The document is complete when after scanning it _num is 0
+
+        // Scan
+        for ( ; !is_complete && size; size--, new_data++)
+            switch (_root) {
+                case Undefined:
+                    if (*new_data == '{' || *new_data == '[') {
+                        ++_num;
+                        _root = (*new_data == '{') ? Object : Array;
+                        expected_open = (_root == Object) ? '{' : '[';
+                        expected_close = (_root == Object) ? '}' : ']';
+                    }
+                    break;
+
+                case Object:
+                case Array:
+                    if (*new_data == expected_close) {
+                            if (!--_num)
+                                is_complete = true; // We could tell the exact position in new_data here if the rest of the data is to be used
+                    }
+                    else if (*new_data == expected_open) {
+                        if (_num < _SaneNumLimit)
+                            ++_num;
+                        else {
+                            DOUT("document tree has more than %i levels, refusing to parse (reporting as complete)", _num);
+                            _num = 0;
+                            _root = Undefined;
+                            return true;
+                        }
+                    }
+                    break;
+            }
+
+        return is_complete;
+    }
+
+    TcpClient::TcpClient(void)
+    {
+        _d = NULL;
+    }
+
     TcpClient::TcpClient(unsigned int response_buf_size) throw (Exception)
     {
         DOUT("Creating a connector without url");
-        _d = new TcpClientPrivate(response_buf_size);
-        if (!_d || !_d->buffer) {
-            if (_d) {
-                delete _d;
-                _d = NULL;
-            }
-
-            throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "could not get memory");
-        }
+        _init("", response_buf_size);
     }
 
     TcpClient::TcpClient(const std::string& url, unsigned int response_buf_size) throw (Exception)
     {
-        _d = new TcpClientPrivate(response_buf_size, url);
-        if (!_d || !_d->buffer) {
-            if (_d) {
-                delete _d;
-                _d = NULL;
-            }
-
-            throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "could not get memory");
-        }
+        _init(url, response_buf_size);
     }
 
     TcpClient::~TcpClient(void)
@@ -164,18 +222,6 @@ namespace jsonrpc
 
         try
         {
-            // NOTE: a very dirty way to get enough data from a socket is to read it all in one
-            //       operation into a sufficiently large buffer. This is done here as I could
-            //       not figure out how to get the size of available data on a boost::async socket.
-            //       For now, this large buffer approach should be enough for my purposes but this
-            //       limitation stays:
-            //       1. TcpClient is not able to handle responses larger than its buffer.
-            //       2. Any data following a proper response (e.g. a notification) will be
-            //          silently discarded by AbstractClient code.
-            //
-            //       It does not matter anyway because we have already decided to move away from
-            //       using libjsoncpp (not very portable, no support for notifications,
-            //       unportable dependency - libjson, unstable API).
             boost::system::error_code error;
             size_t len;
 
@@ -185,11 +231,16 @@ namespace jsonrpc
             if (len < message.size())
                 throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "could not send request");
 
-            len = _d->socket.read_some(boost::asio::buffer(_d->buffer, _d->buffer_size), error);
-            if (error && error != boost::asio::error::eof)
-                throw system_error(error);
+            JsonCompletionTester tester;
 
-            response.assign(_d->buffer, len);
+            for (bool enough_data = false; !enough_data; enough_data = tester.isComplete(_d->buffer, len)) {
+                len = _d->socket.read_some(boost::asio::buffer(_d->buffer, _d->buffer_size), error);
+                if (error && error != boost::asio::error::eof)
+                    throw system_error(error);
+
+                response.append(_d->buffer, len);
+            }
+
             DOUT("got response %s", response.c_str());
         }
         catch (const std::exception& e)
@@ -205,8 +256,15 @@ namespace jsonrpc
     bool TcpClient::SetUrl(const std::string& url)
     {
         if (!_d) {
-            DOUT("not initialized");
-            return false;
+            DOUT("initializing");
+            try {
+                // Uses default buffer size in TcpClientPrivate::_DefaultBufsize
+                _init(url, 0);
+            }
+            catch (const Exception& e) {
+                DOUT("could not initialize: %s", e.what());
+                return false;
+            }
         }
 
         _d->setUrl(url);
@@ -265,6 +323,19 @@ namespace jsonrpc
         }
         catch (const std::exception& e) {
             DOUT("could not close socket: %s", e.what());
+        }
+    }
+
+    void TcpClient::_init(const std::string &url, unsigned int response_buf_size) throw (Exception)
+    {
+        _d = new TcpClientPrivate(response_buf_size, url);
+        if (!_d || !_d->buffer) {
+            if (_d) {
+                delete _d;
+                _d = NULL;
+            }
+
+            throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "could not get memory");
         }
     }
 }
