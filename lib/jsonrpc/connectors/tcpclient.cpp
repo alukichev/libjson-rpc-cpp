@@ -40,17 +40,44 @@ namespace jsonrpc
         std::string port;
         io_service ioService;
         tcp::socket socket;
+        char *buffer;
+        size_t buffer_size;
 
-        inline TcpClientPrivate(const std::string& url) : ioService(), socket(ioService) { setUrl(url); }
-        inline TcpClientPrivate() : ioService(), socket(ioService) {}
+        inline TcpClientPrivate(size_t bufsize, const std::string& url) : ioService(), socket(ioService) { setUrl(url); createBuf(bufsize); }
+        inline TcpClientPrivate(size_t bufsize) : ioService(), socket(ioService) { createBuf(bufsize); }
 
+        inline ~TcpClientPrivate() { if (buffer) delete buffer; }
+
+        inline void createBuf(size_t size);
         inline void setUrl(const std::string& url);
 
     private:
         static const std::string _DefaultPort;
+        static const size_t _DefaultBufsize;
     };
 
     const std::string TcpClientPrivate::_DefaultPort = "8889";
+    const size_t TcpClientPrivate::_DefaultBufsize = 4096;
+
+    inline void TcpClientPrivate::createBuf(size_t size)
+    {
+        if (size <= 1) {
+            DOUT("specified %i as buffer size, setting to default size %i",
+                 size, _DefaultBufsize);
+            size = _DefaultBufsize;
+        }
+
+        buffer = NULL;
+        buffer_size = 0;
+
+        try { // If new throws an exception
+            buffer = new char[size];
+            buffer_size = size;
+        }
+        catch (const std::exception& e) {
+            DOUT("could not allocate a buffer of %i bytes: %s", e.what());
+        }
+    }
 
     inline void TcpClientPrivate::setUrl(const std::string &url)
     {
@@ -93,17 +120,31 @@ namespace jsonrpc
         DOUT("url %s: host %s, port %s", url.c_str(), host.c_str(), port.c_str());
     }
 
-    TcpClient::TcpClient()
+    TcpClient::TcpClient(unsigned int response_buf_size) throw (Exception)
     {
         DOUT("Creating a connector without url");
-        _d = new TcpClientPrivate();
+        _d = new TcpClientPrivate(response_buf_size);
+        if (!_d || !_d->buffer) {
+            if (_d) {
+                delete _d;
+                _d = NULL;
+            }
+
+            throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "could not get memory");
+        }
     }
 
-    TcpClient::TcpClient(const std::string& url) throw (Exception)
+    TcpClient::TcpClient(const std::string& url, unsigned int response_buf_size) throw (Exception)
     {
-        _d = new TcpClientPrivate(url);
-        if (!_d)
+        _d = new TcpClientPrivate(response_buf_size, url);
+        if (!_d || !_d->buffer) {
+            if (_d) {
+                delete _d;
+                _d = NULL;
+            }
+
             throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "could not get memory");
+        }
     }
 
     TcpClient::~TcpClient(void)
@@ -123,7 +164,18 @@ namespace jsonrpc
 
         try
         {
-            boost::array<char, 1024> buf;
+            // NOTE: a very dirty way to get enough data from a socket is to read it all in one
+            //       operation into a sufficiently large buffer. This is done here as I could
+            //       not figure out how to get the size of available data on a boost::async socket.
+            //       For now, this large buffer approach should be enough for my purposes but this
+            //       limitation stays:
+            //       1. TcpClient is not able to handle responses larger than its buffer.
+            //       2. Any data following a proper response (e.g. a notification) will be
+            //          silently discarded by AbstractClient code.
+            //
+            //       It does not matter anyway because we have already decided to move away from
+            //       using libjsoncpp (not very portable, no support for notifications,
+            //       unportable dependency - libjson, unstable API).
             boost::system::error_code error;
             size_t len;
 
@@ -133,11 +185,11 @@ namespace jsonrpc
             if (len < message.size())
                 throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "could not send request");
 
-            len = _d->socket.read_some(boost::asio::buffer(buf), error);
+            len = _d->socket.read_some(boost::asio::buffer(_d->buffer, _d->buffer_size), error);
             if (error && error != boost::asio::error::eof)
                 throw system_error(error);
 
-            response.assign(buf.data(), len);
+            response.assign(_d->buffer, len);
             DOUT("got response %s", response.c_str());
         }
         catch (const std::exception& e)

@@ -18,8 +18,8 @@ namespace jsonrpc
     class TcpClient : public AbstractClientConnector
     {
         public:
-            TcpClient();
-            TcpClient(const std::string& url) throw (Exception);
+            TcpClient(unsigned int response_buf_size = 4096) throw (Exception);
+            TcpClient(const std::string& url, unsigned int response_buf_size = 4096) throw (Exception);
             virtual ~TcpClient();
 
             virtual std::string SendMessage(const std::string& message) throw (Exception);
