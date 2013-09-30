@@ -7,6 +7,8 @@
 
 #include <cstdlib>
 #include <iostream>
+// for sleep
+#include <unistd.h>
 
 #include <jsonrpc/rpc.h>
 

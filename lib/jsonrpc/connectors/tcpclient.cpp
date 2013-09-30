@@ -98,7 +98,7 @@ namespace jsonrpc
             buffer_size = size;
         }
         catch (const std::exception& e) {
-            DOUT("could not get %i bytes of memory: %s", e.what());
+            DOUT("could not get %i bytes of memory: %s", size, e.what());
         }
     }
 
