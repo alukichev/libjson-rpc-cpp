@@ -28,7 +28,7 @@ namespace jsonrpc
             Client(AbstractClientConnector* connector, bool validateResponse);
             virtual ~Client();
 
-            Json::Value CallMethod(const std::string& name, const Json::Value& paramter) throw (Exception);
+            Json::Value CallMethod(const std::string& name, const Json::Value& paramter, int id = -1) throw (Exception);
             void CallNotification(const std::string& name, const Json::Value& paramter) throw (Exception);
 
         private:

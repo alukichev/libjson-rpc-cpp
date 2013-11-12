@@ -24,13 +24,14 @@ namespace jsonrpc
     }
     
     Json::Value Client::CallMethod(const std::string& name,
-                                   const Json::Value& parameter) throw(Exception)
+                                   const Json::Value& parameter, int id) throw(Exception)
     {
         Json::FastWriter writer;
         Json::Reader reader;
         Json::Value result;
 
-        int id = 1;
+        if (id <= 0)
+            id = 1;
 
         std::string str_result = this->connector->SendMessage(
                 writer.write(this->BuildRequestObject(name, parameter, id)));
