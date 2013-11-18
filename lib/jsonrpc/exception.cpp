@@ -45,9 +45,7 @@ namespace jsonrpc
 
     const char* Exception::what() const throw ()
     {
-        std::stringstream ss;
-        ss << "Error  " << this->code << " : " << this->message;
-        return ss.str().c_str();
+        return this->message.c_str();
     }
 
 } /* namespace jsonrpc */
