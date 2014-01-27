@@ -25,7 +25,7 @@ using boost::asio::ip::address_v4;
 using boost::system::error_code;
 using boost::system::system_error;
 
-#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG
 #define DOUT(msg, ...)   ({fprintf(stderr, "%s:%d %s(): " msg "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__);})
