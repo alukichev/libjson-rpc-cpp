@@ -235,8 +235,11 @@ namespace jsonrpc
 
             for (bool enough_data = false; !enough_data; enough_data = tester.isComplete(_d->buffer, len)) {
                 len = _d->socket.read_some(boost::asio::buffer(_d->buffer, _d->buffer_size), error);
-                if (error && error != boost::asio::error::eof)
+                if (error) {
+                    if (error == boost::asio::error::eof || error == boost::asio::error::connection_reset)
+                        DOUT("disconnect detected");
                     throw system_error(error);
+                }
 
                 response.append(_d->buffer, len);
             }
