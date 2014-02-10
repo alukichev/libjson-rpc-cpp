@@ -15,6 +15,8 @@
 
 #include <boost/array.hpp>
 #include <boost/asio.hpp>
+#include <boost/date_time.hpp>
+#include <boost/thread.hpp>
 
 #include <errno.h>
 #include <string.h>
@@ -24,6 +26,7 @@ using boost::asio::io_service;
 using boost::asio::ip::address_v4;
 using boost::system::error_code;
 using boost::system::system_error;
+using std::string;
 
 // #define DEBUG
 
@@ -36,22 +39,22 @@ using boost::system::system_error;
 namespace jsonrpc
 {
     struct TcpClientPrivate {
-        std::string host;
-        std::string port;
+        string host;
+        string port;
         io_service ioService;
         tcp::socket socket;
         char *buffer;
         size_t buffer_size;
 
-        inline TcpClientPrivate(size_t bufsize, const std::string& url) : ioService(), socket(ioService) { if (!url.empty()) setUrl(url); createBuf(bufsize); }
+        inline TcpClientPrivate(size_t bufsize, const string& url) : ioService(), socket(ioService) { if (!url.empty()) setUrl(url); createBuf(bufsize); }
 
         inline ~TcpClientPrivate() { if (buffer) delete buffer; }
 
         inline void createBuf(size_t size);
-        inline void setUrl(const std::string& url);
+        inline void setUrl(const string& url);
 
     private:
-        static const std::string _DefaultPort;
+        static const string _DefaultPort;
         static const size_t _DefaultBufsize;
     };
 
@@ -77,9 +80,39 @@ namespace jsonrpc
             int _num;
     };
 
-    const std::string TcpClientPrivate::_DefaultPort = "8889";
+    const string TcpClientPrivate::_DefaultPort = "8889";
     const size_t TcpClientPrivate::_DefaultBufsize = 4096;
     const int JsonCompletionTester::_SaneNumLimit = 4096;
+
+    // Throws an exception
+    static inline void _receiveWithTimeout(TcpClientPrivate& d, string& reply, int timeout = 4000)
+    {
+        boost::system::error_code error;
+        size_t len;
+        JsonCompletionTester tester;
+
+        for (bool enough_data = false; !enough_data; enough_data = tester.isComplete(d.buffer, len)) {
+            boost::system_time now = boost::get_system_time();
+            const boost::system_time stop_at = now + boost::posix_time::milliseconds(timeout);
+
+            while (!d.socket.available() && now < stop_at) {
+                boost::this_thread::sleep(boost::posix_time::milliseconds(1));
+                now = boost::get_system_time();
+            }
+
+            if (stop_at <= now)
+                throw system_error(boost::asio::error::timed_out);
+
+            len = d.socket.read_some(boost::asio::buffer(d.buffer, d.buffer_size), error);
+            if (error) {
+                if (error == boost::asio::error::eof || error == boost::asio::error::connection_reset)
+                    DOUT("disconnect detected");
+                throw system_error(error);
+            }
+
+            reply.append(d.buffer, len);
+        }
+    }
 
     inline void TcpClientPrivate::createBuf(size_t size)
     {
@@ -102,20 +135,20 @@ namespace jsonrpc
         }
     }
 
-    inline void TcpClientPrivate::setUrl(const std::string &url)
+    inline void TcpClientPrivate::setUrl(const string &url)
     {
 
         // Get the host name
-        const std::string prot_end = "://";
+        const string prot_end = "://";
         size_t host_start = url.find(prot_end);
-        if (host_start == std::string::npos)
+        if (host_start == string::npos)
             host_start = 0;
         else
             host_start += prot_end.length();
 
-        const std::string host_end_s = ":/";
+        const string host_end_s = ":/";
         size_t host_end = url.find_first_of(host_end_s, host_start);
-        if (host_end == std::string::npos)
+        if (host_end == string::npos)
             host_end = url.length();
 
         size_t host_len = host_end - host_start;
@@ -128,7 +161,7 @@ namespace jsonrpc
         }
         else {
             char *e;
-            const std::string port_s = url.substr(host_end + 1, url.length() - (host_end + 1));
+            const string port_s = url.substr(host_end + 1, url.length() - (host_end + 1));
 
             if (!::strtoul(port_s.c_str(), &e, 10) || e == port_s.c_str()) {
                 DOUT("url %s has incorrect port number, assigning default %s", url.c_str(), _DefaultPort.c_str());
@@ -200,7 +233,7 @@ namespace jsonrpc
         _init("", response_buf_size);
     }
 
-    TcpClient::TcpClient(const std::string& url, unsigned int response_buf_size) throw (Exception)
+    TcpClient::TcpClient(const string& url, unsigned int response_buf_size) throw (Exception)
     {
         _init(url, response_buf_size);
     }
@@ -211,12 +244,12 @@ namespace jsonrpc
             delete _d;
     }
 
-    std::string TcpClient::SendMessage(const std::string& message) throw (Exception)
+    string TcpClient::SendMessage(const string& message) throw (Exception)
     {
         if (!_connect())
             throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "url: " + _d->host + ":" + _d->port);
 
-        std::string response;
+        string response;
 
         DOUT("sending request %s", message.c_str());
 
@@ -231,19 +264,7 @@ namespace jsonrpc
             if (len < message.size())
                 throw Exception(Errors::ERROR_CLIENT_CONNECTOR, "could not send request");
 
-            JsonCompletionTester tester;
-
-            for (bool enough_data = false; !enough_data; enough_data = tester.isComplete(_d->buffer, len)) {
-                len = _d->socket.read_some(boost::asio::buffer(_d->buffer, _d->buffer_size), error);
-                if (error) {
-                    if (error == boost::asio::error::eof || error == boost::asio::error::connection_reset)
-                        DOUT("disconnect detected");
-                    throw system_error(error);
-                }
-
-                response.append(_d->buffer, len);
-            }
-
+            _receiveWithTimeout(*_d, response);
             DOUT("got response %s", response.c_str());
         }
         catch (const std::exception& e)
@@ -256,7 +277,7 @@ namespace jsonrpc
         return response;
     }
 
-    bool TcpClient::SetUrl(const std::string& url)
+    bool TcpClient::SetUrl(const string& url)
     {
         if (!_d) {
             DOUT("initializing");
@@ -329,7 +350,7 @@ namespace jsonrpc
         }
     }
 
-    void TcpClient::_init(const std::string &url, unsigned int response_buf_size) throw (Exception)
+    void TcpClient::_init(const string &url, unsigned int response_buf_size) throw (Exception)
     {
         _d = new TcpClientPrivate(response_buf_size, url);
         if (!_d || !_d->buffer) {

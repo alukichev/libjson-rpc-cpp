@@ -22,7 +22,7 @@ endif()
 if(USE_TCP)
   set(Boost_USE_STATIC_LIBS ON)
   set(Boost_USE_STATIC_RUNTIME ON)
-  find_package( Boost 1.40.0 REQUIRED COMPONENTS system )
+  find_package( Boost 1.40.0 REQUIRED COMPONENTS date_time system thread )
 endif()
 
 configure_file (
